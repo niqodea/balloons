@@ -329,9 +329,9 @@ class Deflator:
 # NOTE: Ignoring mypy misc below as it otherwise complains that BLN must be covariant
 
 
-class BalloonDatabaseCache(Generic[BN]):
+class BalloonCache(Generic[BN]):
     """
-    Caches database information about balloons of a certain type.
+    Caches information about balloons of a certain type.
     """
 
     def __init__(self, type_: type[BN], names: set[str]) -> None:
@@ -352,7 +352,7 @@ class BalloonDatabaseCache(Generic[BN]):
 
     def get_all_names(self) -> set[str]:
         """
-        Get the names of all balloons in the database.
+        Get the names of all balloons managed by this cache.
         """
         return self._names
 
@@ -437,7 +437,7 @@ class StandardSpecializedBalloonProvider(SpecializedBalloonProvider[BN]):
         self,
         type_: type[BN],
         jsons_path: Path,
-        cache: BalloonDatabaseCache[BN],
+        cache: BalloonCache[BN],
         baseline_provider: SpecializedBalloonProvider[BN],
         inflator: Inflator,
     ) -> None:
@@ -497,7 +497,7 @@ class SpecializedBalloonTracker(Generic[BN]):
         type_: type[BN],
         jsons_path: Path,
         trackers: dict[type[Balloon], SpecializedBalloonTracker[NamedBalloon]],
-        cache: BalloonDatabaseCache[BN],
+        cache: BalloonCache[BN],
         baseline_provider: SpecializedBalloonProvider[BN],
         inflator: Inflator,
         deflator: Deflator,
@@ -729,8 +729,8 @@ class BalloonProvider(Generic[B]):
 
     def get(self, name: str) -> B:
         """
-        Provide the balloon with the given name, possibly inflating it from the JSON
-        database if missing from memory.
+        Provide the balloon with the given name, possibly inflating it from JSON if
+        missing from memory.
 
         :param name: Balloon name.
         :return: Balloon with the given name.
@@ -906,11 +906,11 @@ class ClosedBalloonWorld(BalloonWorld):
             dynamic_type_provider=self._dynamic_type_provider,
         )
 
-    def populate(self, database_path: Path) -> ClosedBalloonWorld:
+    def populate(self, world_path: Path) -> Self:
         """
-        Populate the world with balloons from a database.
+        Populate this world with balloons from a new world.
 
-        :param database_path: Path to the database.
+        :param world_path: Path to the new world.
         :return: The populated world.
         """
         specialized_providers: dict[
@@ -926,14 +926,14 @@ class ClosedBalloonWorld(BalloonWorld):
         )
 
         for type_, specialized_provider in self._specialized_providers.items():
-            jsons_path = database_path / type_.__qualname__
+            jsons_path = world_path / type_.__qualname__
             jsons_path.mkdir(exist_ok=True)
             names = {p.stem for p in jsons_path.iterdir()}
 
             specialized_providers[type_] = StandardSpecializedBalloonProvider(
                 type_=type_.Named,
                 jsons_path=jsons_path,
-                cache=BalloonDatabaseCache(type_=type_.Named, names=names),
+                cache=BalloonCache(type_=type_.Named, names=names),
                 baseline_provider=specialized_provider,
                 inflator=inflator,
             )
@@ -954,11 +954,11 @@ class ClosedBalloonWorld(BalloonWorld):
             deflator=deflator,
         )
 
-    def to_open(self, database_path: Path) -> OpenBalloonWorld:
+    def to_open(self, world_path: Path) -> OpenBalloonWorld:
         """
         Convert the world to an open world.
 
-        :param database_path: Path to the database where new balloons are stored.
+        :param world_path: Path to the world where new balloons are stored.
         :return: The open world.
         """
         specialized_providers: dict[
@@ -977,10 +977,10 @@ class ClosedBalloonWorld(BalloonWorld):
         )
 
         for type_, specialized_provider in self._specialized_providers.items():
-            jsons_path = database_path / type_.__qualname__
+            jsons_path = world_path / type_.__qualname__
             jsons_path.mkdir(exist_ok=True)
             names = {p.stem for p in jsons_path.iterdir()}
-            cache = BalloonDatabaseCache(type_=type_.Named, names=names)
+            cache = BalloonCache(type_=type_.Named, names=names)
 
             specialized_providers[type_] = StandardSpecializedBalloonProvider(
                 type_=type_.Named,
@@ -1212,8 +1212,7 @@ class OpenBalloonWorld:
 
     def track(self, balloon: Balloon) -> None:
         """
-        Track a balloon, possibly deflating it to the JSON database if missing from
-        disk.
+        Track a balloon, possibly deflating it to JSON if missing from the world.
         """
         if not isinstance(balloon, NamedBalloon):
             raise ValueError(f"Balloon is not named: {balloon}")
