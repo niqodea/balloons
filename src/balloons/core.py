@@ -181,9 +181,16 @@ class Inflator:
             }  # type: ignore[return-value]
 
         if type_origin is tuple:
+            if len(type_args) != 2 or type_args[1] is not Ellipsis:
+                raise ValueError(
+                    "Expected type hint of the form 'tuple[T, ...]', received: "
+                    f"{static_type}"
+                )
+            item_type = type_args[0]
+
             if not isinstance(deflated_value, list):
                 raise ValueError(f"Expected list, got: {type(deflated_value)}")
-            (item_type,) = type_args
+
             return tuple(self.inflate(item, item_type) for item in deflated_value)  # type: ignore[return-value]
 
         if type_origin is set:
@@ -1101,7 +1108,9 @@ class ClosedBalloonWorld(BalloonWorld):
                         if issubclass(value_type, Balloon):
                             frontier_types.add(value_type)
                     elif type_origin is set or type_origin is tuple:
-                        (item_type,) = type_args
+                        if len(type_args) != 2 or type_args[1] is not Ellipsis:
+                            raise ValueError(f"Unsupported Tuple type: {field_type}")
+                        item_type = type_args[0]
                         if issubclass(item_type, Balloon):
                             frontier_types.add(item_type)
                     elif type_origin is UnionType:
