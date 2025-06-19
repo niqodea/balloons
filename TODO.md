@@ -7,3 +7,5 @@
 
 * Implement lazy inflation of balloon fields, with possibility to eagerly inflate all of them at provision time
 * Implement flat vs nested database structure, with the latter supporting class qualname collisions thanks to conformity to python module structure
+
+* Support multiple baselines for a single word
