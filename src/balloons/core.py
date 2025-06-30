@@ -1207,7 +1207,7 @@ class ClosedBalloonWorld(BalloonWorld):
         return closure_types
 
 
-class OpenBalloonWorld:
+class OpenBalloonWorld(BalloonWorld):
     """
     A world where the set of tracked balloons can grow.
     """
