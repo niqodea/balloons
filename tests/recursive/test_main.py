@@ -21,21 +21,21 @@ BASE_WORLD = ClosedBalloonWorld.create()
 
 def test_inflation(tmp_path: Path) -> None:
     world = BASE_WORLD.populate(DATABASE_PATH)
-    food_provider = world.get_provider(Food)
+    food_balloonist = world.get_balloonist(Food)
 
     # Simple
-    apple = food_provider.get(APPLE.as_named().name)
-    banana = food_provider.get(BANANA.as_named().name)
-    carrot = food_provider.get(CARROT.as_named().name)
-    date = food_provider.get(DATE.as_named().name)
+    apple = food_balloonist.get(APPLE.as_named().name)
+    banana = food_balloonist.get(BANANA.as_named().name)
+    carrot = food_balloonist.get(CARROT.as_named().name)
+    date = food_balloonist.get(DATE.as_named().name)
     assert apple == APPLE
     assert banana == BANANA
     assert carrot == CARROT
     assert date == DATE
     # Composite
-    fruit_salad = food_provider.get(FRUIT_SALAD.as_named().name)
-    vegetable_salad = food_provider.get(VEGETABLE_SALAD.as_named().name)
-    fruit_and_vegetable_salad = food_provider.get(
+    fruit_salad = food_balloonist.get(FRUIT_SALAD.as_named().name)
+    vegetable_salad = food_balloonist.get(VEGETABLE_SALAD.as_named().name)
+    fruit_and_vegetable_salad = food_balloonist.get(
         FRUIT_AND_VEGETABLE_SALAD.as_named().name
     )
     assert fruit_salad == FRUIT_SALAD
@@ -59,21 +59,21 @@ def test_consistency(tmp_path: Path) -> None:
     # Simulate a new Python session by creating the objects again
 
     other_world = BASE_WORLD.populate(DATABASE_PATH)
-    food_provider = other_world.get_provider(Food)
+    food_balloonist = other_world.get_balloonist(Food)
 
     # Simple
-    apple = food_provider.get(APPLE.as_named().name)
-    banana = food_provider.get(BANANA.as_named().name)
-    carrot = food_provider.get(CARROT.as_named().name)
-    date = food_provider.get(DATE.as_named().name)
+    apple = food_balloonist.get(APPLE.as_named().name)
+    banana = food_balloonist.get(BANANA.as_named().name)
+    carrot = food_balloonist.get(CARROT.as_named().name)
+    date = food_balloonist.get(DATE.as_named().name)
     assert apple == APPLE
     assert banana == BANANA
     assert carrot == CARROT
     assert date == DATE
     # Composite
-    fruit_salad = food_provider.get(FRUIT_SALAD.as_named().name)
-    vegetable_salad = food_provider.get(VEGETABLE_SALAD.as_named().name)
-    fruit_and_vegetable_salad = food_provider.get(
+    fruit_salad = food_balloonist.get(FRUIT_SALAD.as_named().name)
+    vegetable_salad = food_balloonist.get(VEGETABLE_SALAD.as_named().name)
+    fruit_and_vegetable_salad = food_balloonist.get(
         FRUIT_AND_VEGETABLE_SALAD.as_named().name
     )
     assert fruit_salad == FRUIT_SALAD

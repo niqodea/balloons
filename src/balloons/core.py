@@ -157,14 +157,14 @@ class Inflator:
     def __init__(
         self,
         types_: dict[str, type[Balloon]],
-        providers: Mapping[type[Balloon], SpecializedBalloonProvider[NamedBalloon]],
+        balloonists: Mapping[type[Balloon], SpecializedBalloonist[NamedBalloon]],
     ) -> None:
         """
         :param types: The balloon types, indexed by their name.
-        :param providers: The providers of named balloons.
+        :param balloonists: The balloonists for the types.
         """
         self._types = types_
-        self._providers = providers
+        self._balloonists = balloonists
 
     # NOTE: It's hard to get mypy to understand that what we return matches VI here
     # We thus ignore some complaints about return values
@@ -228,9 +228,9 @@ class Inflator:
                 if not issubclass(type_, static_type):
                     raise ValueError(f"Expected type: {static_type}, got: {type_}")
 
-                if (provider := self._providers.get(type_)) is None:
-                    raise ValueError(f"No provider for type: {type_}")
-                return provider.get(name)  # type: ignore[return-value]
+                if (balloonist := self._balloonists.get(type_)) is None:
+                    raise ValueError(f"No balloonist for type: {type_}")
+                return balloonist.get(name)  # type: ignore[return-value]
 
             if isinstance(deflated_value, dict):
                 type_name = deflated_value["@type"]
@@ -273,12 +273,12 @@ class Deflator:
 
     def __init__(
         self,
-        providers: Mapping[type[Balloon], SpecializedBalloonProvider[NamedBalloon]],
+        balloonists: Mapping[type[Balloon], SpecializedBalloonist[NamedBalloon]],
     ) -> None:
         """
-        :param providers: Providers of named balloons.
+        :param balloonists: The balloonists for the types of balloons.
         """
-        self._providers = providers
+        self._balloonists = balloonists
 
     def deflate(self, inflated_value: InflatedValue) -> DeflatedValue:
         """
@@ -289,14 +289,14 @@ class Deflator:
         """
         if isinstance(inflated_value, NamedBalloon):
             type_ = type(inflated_value).Base
-            provider = self._providers[type_]
+            balloonist = self._balloonists[type_]
 
-            if inflated_value.name not in provider.get_names():
+            if inflated_value.name not in balloonist.get_names():
                 raise ValueError(
                     f"Could not find balloon with name: {inflated_value.name}"
                 )
 
-            tracked_balloon = provider.get(inflated_value.name)
+            tracked_balloon = balloonist.get(inflated_value.name)
             if inflated_value is not tracked_balloon:
                 raise ValueError(
                     f"Found two balloons with same name and type\n"
@@ -391,7 +391,7 @@ class BalloonCache(Generic[BN]):
         self._balloons[balloon.name] = balloon
 
 
-class SpecializedBalloonProvider(Protocol[BN]):
+class SpecializedBalloonist(Protocol[BN]):
     """
     Provides named balloons of a certain type, not including subtypes.
     """
@@ -413,9 +413,9 @@ class SpecializedBalloonProvider(Protocol[BN]):
         """
 
 
-class DefaultSpecializedBalloonProvider(SpecializedBalloonProvider[BN]):
+class DefaultSpecializedBalloonist(SpecializedBalloonist[BN]):
     """
-    The standard specialized balloon provider.
+    The standard specialized balloonist.
     """
 
     def __init__(
@@ -423,20 +423,20 @@ class DefaultSpecializedBalloonProvider(SpecializedBalloonProvider[BN]):
         type_: type[BN],
         jsons_path: Path,
         cache: BalloonCache[BN],
-        baseline_provider: SpecializedBalloonProvider[BN],
+        baseline_balloonist: SpecializedBalloonist[BN],
         inflator: Inflator,
     ) -> None:
         """
         :param type_: Type of the managed balloons.
         :param jsons_path: Directory with the JSONs of the balloons.
         :param cache: Cache of the balloons.
-        :param baseline_provider: Provider of balloons from the immutable baseline.
+        :param baseline_balloonist: Balloonist from the immutable baseline.
         :param inflator: Inflator of deflated values.
         """
         self._type = type_
         self._jsons_path = jsons_path
         self._cache = cache
-        self._baseline_provider = baseline_provider
+        self._baseline_balloonist = baseline_balloonist
         self._inflator = inflator
 
     def get(self, name: str) -> BN:
@@ -460,20 +460,20 @@ class DefaultSpecializedBalloonProvider(SpecializedBalloonProvider[BN]):
             self._cache.track(balloon)
             return balloon
 
-        if name in self._baseline_provider.get_names():
-            return self._baseline_provider.get(name)
+        if name in self._baseline_balloonist.get_names():
+            return self._baseline_balloonist.get(name)
 
         raise ValueError(f"Could not find balloon with name: {name}")
 
     def get_names(self) -> set[str]:
         return self._cache.get_all_names() | {
-            n for n in self._baseline_provider.get_names()
+            n for n in self._baseline_balloonist.get_names()
         }
 
 
-class EmptySpecializedBalloonProvider(SpecializedBalloonProvider[NoReturn]):
+class EmptySpecializedBalloonist(SpecializedBalloonist[NoReturn]):
     def get(self, name: str) -> NoReturn:
-        raise RuntimeError("This provider is empty.")
+        raise RuntimeError("This balloonist has no balloons.")
 
     def get_names(self) -> set[str]:
         return set()
@@ -490,7 +490,7 @@ class SpecializedBalloonTracker(Generic[BN]):
         jsons_path: Path,
         trackers: dict[type[Balloon], SpecializedBalloonTracker[NamedBalloon]],
         cache: BalloonCache[BN],
-        baseline_provider: SpecializedBalloonProvider[BN],
+        baseline_balloonist: SpecializedBalloonist[BN],
         inflator: Inflator,
         deflator: Deflator,
     ) -> None:
@@ -499,7 +499,7 @@ class SpecializedBalloonTracker(Generic[BN]):
         :param jsons_path: Directory with the JSONs of the balloons.
         :param trackers: Trackers of the balloons.
         :param cache: Cache of the balloons.
-        :param baseline_provider: Provider of balloons from the immutable baseline.
+        :param baseline_balloonist: Balloonist from the immutable baseline.
         :param inflator: Inflator of deflated values.
         :param deflator: Deflator of inflated values.
         """
@@ -507,7 +507,7 @@ class SpecializedBalloonTracker(Generic[BN]):
         self._jsons_path = jsons_path
         self._trackers = trackers
         self._cache = cache
-        self._baseline_provider = baseline_provider
+        self._baseline_balloonist = baseline_balloonist
         self._inflator = inflator
         self._deflator = deflator
 
@@ -521,8 +521,8 @@ class SpecializedBalloonTracker(Generic[BN]):
             raise ValueError(f"Could not handle type: {type(balloon)}")
 
         # NOTE: We check with `is`, but we could also check with `==` to be less strict
-        if balloon.name in self._baseline_provider.get_names():
-            baseline_balloon = self._baseline_provider.get(balloon.name)
+        if balloon.name in self._baseline_balloonist.get_names():
+            baseline_balloon = self._baseline_balloonist.get(balloon.name)
             if balloon is baseline_balloon:
                 return
             raise ValueError(
@@ -772,7 +772,7 @@ class DynamicTypeTracker:
         self._cache.track(name, dynamic_type)
 
 
-class BalloonProvider(Generic[B]):
+class Balloonist(Generic[B]):
     """
     Provides named balloons of a balloon type, including subtypes.
     """
@@ -780,19 +780,19 @@ class BalloonProvider(Generic[B]):
     def __init__(
         self,
         type_: type[B],
-        specialized_providers: dict[
-            type[Balloon], SpecializedBalloonProvider[NamedBalloon]
+        specialized_balloonists: dict[
+            type[Balloon], SpecializedBalloonist[NamedBalloon]
         ],
         dynamic_type_provider: DynamicTypeProvider,
     ) -> None:
         """
         :param type_: Type of the managed balloons.
-        :param specialized_providers: Specialized providers for each type of balloon.
+        :param specialized_balloonists: Specialized balloonists for each type.
         :param dynamic_type_provider: Provider of dynamic types of balloons.
         """
         self._type = type_
         self._dynamic_type_provider = dynamic_type_provider
-        self._specialized_providers = specialized_providers
+        self._specialized_balloonists = specialized_balloonists
 
     def get(self, name: str) -> B:
         """
@@ -809,10 +809,10 @@ class BalloonProvider(Generic[B]):
 
         # Hack to bind named to unnamed balloon types
         named_type: type[NamedBalloon] = type_.Named  # type: ignore[name-defined]
-        specialized_provider: SpecializedBalloonProvider[named_type] = (  # type: ignore[valid-type]
-            self._specialized_providers[type_]
+        specialized_balloonist: SpecializedBalloonist[named_type] = (  # type: ignore[valid-type]
+            self._specialized_balloonists[type_]
         )
-        return specialized_provider.get(name)
+        return specialized_balloonist.get(name)
 
     def get_names(self) -> set[str]:
         """
@@ -820,49 +820,9 @@ class BalloonProvider(Generic[B]):
 
         :return: Names of the balloons.
         """
-        return {n for p in self._specialized_providers.values() for n in p.get_names()}
-
-
-class Balloonist(Generic[B]):
-    """
-    Inflates and deflates balloons of a certain type, including subtypes.
-    """
-
-    def __init__(
-        self,
-        type_: type[B],
-        inflator: Inflator,
-        deflator: Deflator,
-    ) -> None:
-        """
-        :param type_: Type of the managed balloons.
-        :param inflator: Inflator of deflated values.
-        :param deflator: Deflator of inflated values.
-        """
-        self._type = type_
-        self._inflator = inflator
-        self._deflator = deflator
-
-    def inflate(self, deflated_balloon: DeflatedValue) -> B:
-        """
-        Inflate a balloon.
-
-        :param deflated_balloon: Deflated balloon.
-        :return: The inflated balloon.
-        """
-        return self._inflator.inflate(deflated_balloon, self._type)
-
-    def deflate(self, inflated_balloon: B_inv) -> DeflatedValue:
-        """
-        Deflate a balloon.
-
-        :param inflated_balloon: Inflated balloon.
-        :return: The deflated balloon.
-        """
-        if not isinstance(inflated_balloon, self._type):
-            raise ValueError(f"Could not handle type: {type(inflated_balloon)}")
-
-        return self._deflator.deflate(inflated_balloon)
+        return {
+            n for p in self._specialized_balloonists.values() for n in p.get_names()
+        }
 
 
 class BalloonWorld(ABC):
@@ -912,15 +872,6 @@ class BalloonWorld(ABC):
         :return: The balloonist for the type.
         """
 
-    @abstractmethod
-    def get_provider(self, type_: type[B]) -> BalloonProvider[B]:
-        """
-        Instantiate a balloon provider for a given type.
-
-        :param type_: Balloon type.
-        :return: The balloon provider for the type.
-        """
-
 
 class ClosedBalloonWorld(BalloonWorld):
     """
@@ -930,9 +881,9 @@ class ClosedBalloonWorld(BalloonWorld):
     def __init__(
         self,
         schema: BalloonWorld.Schema,
-        specialized_providers: Mapping[
+        specialized_balloonists: Mapping[
             type[Balloon],
-            SpecializedBalloonProvider[NamedBalloon],
+            SpecializedBalloonist[NamedBalloon],
         ],
         dynamic_type_provider: DynamicTypeProvider,
         inflator: Inflator,
@@ -940,13 +891,13 @@ class ClosedBalloonWorld(BalloonWorld):
     ) -> None:
         """
         :param schema: Schema of the world.
-        :param specialized_providers: Specialized providers for each type of balloon.
+        :param specialized_balloonists: Specialized balloonists for each type.
         :param dynamic_type_provider: Providers of dynamic types of balloons.
         :param inflator: Inflator of deflated values.
         :param deflator: Deflator of inflated values.
         """
         self._schema = schema
-        self._specialized_providers = specialized_providers
+        self._specialized_balloonists = specialized_balloonists
         self._dynamic_type_provider = dynamic_type_provider
         self._inflator = inflator
         self._deflator = deflator
@@ -958,16 +909,6 @@ class ClosedBalloonWorld(BalloonWorld):
         if type_ not in self._schema.types_:
             raise ValueError(f"Unsupported balloon type: {type_}")
 
-        return Balloonist(
-            type_=type_,
-            inflator=self._inflator,
-            deflator=self._deflator,
-        )
-
-    def get_provider(self, type_: type[B]) -> BalloonProvider[B]:
-        if type_ not in self._schema.types_:
-            raise ValueError(f"Unsupported balloon type: {type_}")
-
         if all(not issubclass(type_, t) for t in self._schema.namespace_types):
             raise ValueError(f"Type does not reside in a namespace: {type_}")
 
@@ -975,13 +916,13 @@ class ClosedBalloonWorld(BalloonWorld):
             t for t in self._schema.nameable_types if issubclass(t, type_)
         }
 
-        specialized_providers: dict[
-            type[Balloon], SpecializedBalloonProvider[NamedBalloon]
-        ] = {t: self._specialized_providers[t] for t in nameable_types}
+        specialized_balloonists: dict[
+            type[Balloon], SpecializedBalloonist[NamedBalloon]
+        ] = {t: self._specialized_balloonists[t] for t in nameable_types}
 
-        return BalloonProvider(
+        return Balloonist(
             type_=type_,
-            specialized_providers=specialized_providers,
+            specialized_balloonists=specialized_balloonists,
             dynamic_type_provider=self._dynamic_type_provider,
         )
 
@@ -992,34 +933,34 @@ class ClosedBalloonWorld(BalloonWorld):
         :param world_path: Path to the new world.
         :return: The populated world.
         """
-        specialized_providers: dict[
-            type[Balloon], SpecializedBalloonProvider[NamedBalloon]
+        specialized_balloonists: dict[
+            type[Balloon], SpecializedBalloonist[NamedBalloon]
         ] = {}
 
         inflator = Inflator(
             types_={t.__qualname__: t for t in self._schema.types_},
-            providers=specialized_providers,
+            balloonists=specialized_balloonists,
         )
         deflator = Deflator(
-            providers=specialized_providers,
+            balloonists=specialized_balloonists,
         )
 
-        for type_, specialized_provider in self._specialized_providers.items():
+        for type_, specialized_balloonist in self._specialized_balloonists.items():
             jsons_path = world_path / type_.__qualname__
             jsons_path.mkdir(exist_ok=True)
             names = {p.stem for p in jsons_path.iterdir()}
 
-            specialized_providers[type_] = DefaultSpecializedBalloonProvider(
+            specialized_balloonists[type_] = DefaultSpecializedBalloonist(
                 type_=type_.Named,
                 jsons_path=jsons_path,
                 cache=BalloonCache(type_=type_.Named, names=names),
-                baseline_provider=specialized_provider,
+                baseline_balloonist=specialized_balloonist,
                 inflator=inflator,
             )
 
         dynamic_type_cache = DynamicTypeCache()
-        for type_, specialized_provider in specialized_providers.items():
-            for name in specialized_provider.get_names():
+        for type_, specialized_balloonist in specialized_balloonists.items():
+            for name in specialized_balloonist.get_names():
                 dynamic_type_cache.track(name, type_)
 
         dynamic_type_provider = DefaultDynamicTypeProvider(
@@ -1030,7 +971,7 @@ class ClosedBalloonWorld(BalloonWorld):
 
         return ClosedBalloonWorld(
             schema=self._schema,
-            specialized_providers=specialized_providers,
+            specialized_balloonists=specialized_balloonists,
             dynamic_type_provider=dynamic_type_provider,
             inflator=inflator,
             deflator=deflator,
@@ -1043,8 +984,8 @@ class ClosedBalloonWorld(BalloonWorld):
         :param world_path: Path to the world where new balloons are tracked.
         :return: The open world.
         """
-        specialized_providers: dict[
-            type[Balloon], SpecializedBalloonProvider[NamedBalloon]
+        specialized_balloonists: dict[
+            type[Balloon], SpecializedBalloonist[NamedBalloon]
         ] = {}
         specialized_trackers: dict[
             type[Balloon], SpecializedBalloonTracker[NamedBalloon]
@@ -1052,23 +993,23 @@ class ClosedBalloonWorld(BalloonWorld):
 
         inflator = Inflator(
             types_={t.__qualname__: t for t in self._schema.types_},
-            providers=specialized_providers,
+            balloonists=specialized_balloonists,
         )
         deflator = Deflator(
-            providers=specialized_providers,
+            balloonists=specialized_balloonists,
         )
 
-        for type_, specialized_provider in self._specialized_providers.items():
+        for type_, specialized_balloonist in self._specialized_balloonists.items():
             jsons_path = world_path / type_.__qualname__
             jsons_path.mkdir(exist_ok=True)
             names = {p.stem for p in jsons_path.iterdir()}
             cache = BalloonCache(type_=type_.Named, names=names)
 
-            specialized_providers[type_] = DefaultSpecializedBalloonProvider(
+            specialized_balloonists[type_] = DefaultSpecializedBalloonist(
                 type_=type_.Named,
                 jsons_path=jsons_path,
                 cache=cache,
-                baseline_provider=specialized_provider,
+                baseline_balloonist=specialized_balloonist,
                 inflator=inflator,
             )
             specialized_trackers[type_] = SpecializedBalloonTracker(
@@ -1076,14 +1017,14 @@ class ClosedBalloonWorld(BalloonWorld):
                 jsons_path=jsons_path,
                 trackers=specialized_trackers,
                 cache=cache,
-                baseline_provider=specialized_provider,
+                baseline_balloonist=specialized_balloonist,
                 inflator=inflator,
                 deflator=deflator,
             )
 
         dynamic_type_cache = DynamicTypeCache()
-        for type_, specialized_provider in specialized_providers.items():
-            for name in specialized_provider.get_names():
+        for type_, specialized_balloonist in specialized_balloonists.items():
+            for name in specialized_balloonist.get_names():
                 dynamic_type_cache.track(name, type_)
 
         dynamic_type_provider = DefaultDynamicTypeProvider(
@@ -1100,7 +1041,7 @@ class ClosedBalloonWorld(BalloonWorld):
 
         return OpenBalloonWorld(
             schema=self._schema,
-            specialized_providers=specialized_providers,
+            specialized_balloonists=specialized_balloonists,
             specialized_trackers=specialized_trackers,
             dynamic_type_provider=dynamic_type_provider,
             dynamic_type_tracker=dynamic_type_tracker,
@@ -1154,9 +1095,9 @@ class ClosedBalloonWorld(BalloonWorld):
                     f"Namespace type must contain nameable types: {namespace_type}"
                 )
 
-        empty_specialized_providers: Mapping[
-            type[Balloon], EmptySpecializedBalloonProvider
-        ] = {t: EmptySpecializedBalloonProvider() for t in nameable_types}
+        empty_specialized_balloonists: Mapping[
+            type[Balloon], EmptySpecializedBalloonist
+        ] = {t: EmptySpecializedBalloonist() for t in nameable_types}
 
         return ClosedBalloonWorld(
             schema=BalloonWorld.Schema(
@@ -1164,14 +1105,14 @@ class ClosedBalloonWorld(BalloonWorld):
                 namespace_types=namespace_types,
                 nameable_types=nameable_types,
             ),
-            specialized_providers=empty_specialized_providers,
+            specialized_balloonists=empty_specialized_balloonists,
             dynamic_type_provider=EmptyDynamicTypeProvider(),
             inflator=Inflator(
                 types_={t.__qualname__: t for t in types_},
-                providers=empty_specialized_providers,
+                balloonists=empty_specialized_balloonists,
             ),
             deflator=Deflator(
-                providers=empty_specialized_providers,
+                balloonists=empty_specialized_balloonists,
             ),
         )
 
@@ -1243,8 +1184,8 @@ class OpenBalloonWorld:
     def __init__(
         self,
         schema: BalloonWorld.Schema,
-        specialized_providers: dict[
-            type[Balloon], SpecializedBalloonProvider[NamedBalloon]
+        specialized_balloonists: dict[
+            type[Balloon], SpecializedBalloonist[NamedBalloon]
         ],
         specialized_trackers: dict[
             type[Balloon], SpecializedBalloonTracker[NamedBalloon]
@@ -1256,15 +1197,15 @@ class OpenBalloonWorld:
     ) -> None:
         """
         :param schema: Schema of the world.
-        :param specialized_providers: Specialized providers for each type of balloon.
-        :param specialized_trackers: Specialized trackers for each type of balloon.
+        :param specialized_balloonists: Specialized balloonists for each type.
+        :param specialized_trackers: Specialized trackers for each type.
         :param dynamic_type_provider: Provider of dynamic types of balloons.
         :param dynamic_type_tracker: Tracker of dynamic types of balloons.
         :param inflator: Inflator of deflated values.
         :param deflator: Deflator of inflated values.
         """
         self._schema = schema
-        self._specialized_providers = specialized_providers
+        self._specialized_balloonists = specialized_balloonists
         self._specialized_trackers = specialized_trackers
         self._dynamic_type_provider = dynamic_type_provider
         self._dynamic_type_tracker = dynamic_type_tracker
@@ -1274,7 +1215,7 @@ class OpenBalloonWorld:
     def get_schema(self) -> BalloonWorld.Schema:
         return self._schema
 
-    def get_provider(self, type_: type[B]) -> BalloonProvider[B]:
+    def get_balloonist(self, type_: type[B]) -> Balloonist[B]:
         if type_ not in self._schema.types_:
             raise ValueError(f"Unsupported balloon type: {type_}")
 
@@ -1285,24 +1226,14 @@ class OpenBalloonWorld:
             t for t in self._schema.nameable_types if issubclass(t, type_)
         }
 
-        specialized_providers: dict[
-            type[Balloon], SpecializedBalloonProvider[NamedBalloon]
-        ] = {t: self._specialized_providers[t] for t in nameable_types}
-
-        return BalloonProvider(
-            type_=type_,
-            specialized_providers=specialized_providers,
-            dynamic_type_provider=self._dynamic_type_provider,
-        )
-
-    def get_balloonist(self, type_: type[B]) -> Balloonist[B]:
-        if type_ not in self._schema.types_:
-            raise ValueError(f"Unsupported balloon type: {type_}")
+        specialized_balloonists: dict[
+            type[Balloon], SpecializedBalloonist[NamedBalloon]
+        ] = {t: self._specialized_balloonists[t] for t in nameable_types}
 
         return Balloonist(
             type_=type_,
-            inflator=self._inflator,
-            deflator=self._deflator,
+            specialized_balloonists=specialized_balloonists,
+            dynamic_type_provider=self._dynamic_type_provider,
         )
 
     def track(self, balloon: Balloon) -> None:
