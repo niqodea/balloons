@@ -31,6 +31,7 @@ class Balloon:
     The top class for balloons.
     """
 
+    # Hack to return same type, even though it's not technically self
     def to_named(self, name: str) -> Self:
         """
         Promote the balloon to a named balloon.
@@ -165,8 +166,8 @@ class Inflator:
         self._types = types_
         self._providers = providers
 
-    # NOTE: It's hard to get mypy to understand typing for type variables, so we ignore
-    # some complaints here
+    # NOTE: It's hard to get mypy to understand that what we return matches VI here
+    # We thus ignore some complaints about return values
     def inflate(self, deflated_value: DeflatedValue, static_type: type[VI]) -> VI:
         """
         Inflate a deflated value.
@@ -332,9 +333,6 @@ class Deflator:
             return None
 
         raise ValueError(f"Unsupported type: {type(inflated_value)}")
-
-
-# NOTE: Ignoring mypy misc below as it otherwise complains that BLN must be covariant
 
 
 class BalloonCache(Generic[BN]):
@@ -809,7 +807,12 @@ class BalloonProvider(Generic[B]):
         if type_ is None:
             raise ValueError(f"Could not find balloon with name: {name}")
 
-        return self._specialized_providers[type_].get(name)  # type: ignore[return-value]
+        # Hack to bind named to unnamed balloon types
+        named_type: type[NamedBalloon] = type_.Named  # type: ignore[name-defined]
+        specialized_provider: SpecializedBalloonProvider[named_type] = (  # type: ignore[valid-type]
+            self._specialized_providers[type_]
+        )
+        return specialized_provider.get(name)
 
     def get_names(self) -> set[str]:
         """
@@ -898,8 +901,9 @@ class BalloonWorld(ABC):
         :return: The schema of the world.
         """
 
-    @abstractmethod
     # TODO: Understand how to deduplicate the implementation of the methods below
+
+    @abstractmethod
     def get_balloonist(self, type_: type[B]) -> Balloonist[B]:
         """
         Instantiate a balloonist for a given type.
