@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from balloons import ClosedBalloonWorld
+from balloons import (
+    Balloon,
+    EmptyClosedBalloonWorld,
+    StructuredBalloonWorld,
+)
 from tests.recursive.objects import (
     APPLE,
     BANANA,
@@ -12,15 +16,22 @@ from tests.recursive.objects import (
     FRUIT_SALAD,
     VEGETABLE_SALAD,
 )
-from tests.recursive.schema import Food
+from tests.recursive.schema import CompositeFood, Food, SimpleFood
 
 DATABASE_PATH = Path(__file__).parent / "database"
 
-BASE_WORLD = ClosedBalloonWorld.create()
+EMPTY_WORLD = EmptyClosedBalloonWorld()
+
+# TODO: Automate the construction of the schema again
+SCHEMA = StructuredBalloonWorld.Schema(
+    namespace_types={Balloon},
+    types_={Food, SimpleFood, CompositeFood},
+    nameable_types={Food, SimpleFood, CompositeFood},
+)
 
 
 def test_inflation(tmp_path: Path) -> None:
-    world = BASE_WORLD.populate(DATABASE_PATH)
+    world = EMPTY_WORLD.populate(SCHEMA, DATABASE_PATH)
     food_balloonist = world.get_balloonist(Food)
 
     # Simple
@@ -44,7 +55,7 @@ def test_inflation(tmp_path: Path) -> None:
 
 
 def test_consistency(tmp_path: Path) -> None:
-    world = BASE_WORLD.to_open(tmp_path)
+    world = EMPTY_WORLD.populate(SCHEMA, tmp_path).to_open()
 
     # Simple
     world.track(APPLE)
@@ -58,7 +69,7 @@ def test_consistency(tmp_path: Path) -> None:
 
     # Simulate a new Python session by creating the objects again
 
-    other_world = BASE_WORLD.populate(DATABASE_PATH)
+    other_world = EMPTY_WORLD.populate(SCHEMA, DATABASE_PATH)
     food_balloonist = other_world.get_balloonist(Food)
 
     # Simple
