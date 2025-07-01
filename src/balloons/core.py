@@ -413,6 +413,7 @@ class SpecializedBalloonist(Protocol[BN]):
         """
 
 
+# TODO: Settle on Default vs Structured as opposed to Empty
 class DefaultSpecializedBalloonist(SpecializedBalloonist[BN]):
     """
     The standard specialized balloonist.
