@@ -4,8 +4,8 @@ from pathlib import Path
 
 from balloons import (
     Balloon,
-    EmptyClosedBalloonWorld,
-    StructuredBalloonWorld,
+    DefaultBalloonWorld,
+    NullBalloonWorld,
 )
 from tests.basic.objects import (
     ABIGAIL,
@@ -22,10 +22,10 @@ from tests.basic.schema import Animal, Cat, Dog, Owner
 
 DATABASE_PATH = Path(__file__).parent / "database"
 
-EMPTY_WORLD = EmptyClosedBalloonWorld()
+NULL_WORLD = NullBalloonWorld()
 
 # TODO: Automate the construction of the schema again
-SCHEMA = StructuredBalloonWorld.Schema(
+SCHEMA = DefaultBalloonWorld.Schema(
     namespace_types={Balloon},
     types_={Animal, Animal.Size, Cat, Dog, Owner},
     nameable_types={Animal, Cat, Dog, Owner},
@@ -33,7 +33,7 @@ SCHEMA = StructuredBalloonWorld.Schema(
 
 
 def test_inflation(tmp_path: Path) -> None:
-    world = EMPTY_WORLD.populate(SCHEMA, DATABASE_PATH)
+    world = NULL_WORLD.populate(SCHEMA, DATABASE_PATH)
     animal_balloonist = world.get_balloonist(Animal)
     owner_balloonist = world.get_balloonist(Owner)
 
@@ -61,7 +61,7 @@ def test_inflation(tmp_path: Path) -> None:
 
 
 def test_consistency(tmp_path: Path) -> None:
-    world = EMPTY_WORLD.populate(SCHEMA, tmp_path).to_open()
+    world = NULL_WORLD.populate(SCHEMA, tmp_path).to_open()
 
     # Cats
     world.track(ABIGAIL)
@@ -78,7 +78,7 @@ def test_consistency(tmp_path: Path) -> None:
 
     # Simulate a new Python session by creating the objects again
 
-    other_world = EMPTY_WORLD.populate(SCHEMA, tmp_path)
+    other_world = NULL_WORLD.populate(SCHEMA, tmp_path)
     animal_balloonist = other_world.get_balloonist(Animal)
     owner_balloonist = other_world.get_balloonist(Owner)
 

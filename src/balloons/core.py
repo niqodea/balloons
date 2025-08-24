@@ -413,7 +413,6 @@ class SpecializedBalloonist(Protocol[BN]):
         """
 
 
-# TODO: Settle on Default vs Structured as opposed to Empty
 class DefaultSpecializedBalloonist(SpecializedBalloonist[BN]):
     """
     The standard specialized balloonist.
@@ -486,7 +485,11 @@ class DefaultSpecializedBalloonist(SpecializedBalloonist[BN]):
         return self._cache
 
 
-class EmptySpecializedBalloonist(SpecializedBalloonist[NoReturn]):
+class NullSpecializedBalloonist(SpecializedBalloonist[NoReturn]):
+    """
+    A specialized balloonist that has no balloons.
+    """
+
     def get(self, name: str) -> NoReturn:
         raise RuntimeError("This balloonist has no balloons.")
 
@@ -714,7 +717,11 @@ class DefaultDynamicTypeProvider(DynamicTypeProvider):
         return self._cache
 
 
-class EmptyDynamicTypeProvider(DynamicTypeProvider):
+class NullDynamicTypeProvider(DynamicTypeProvider):
+    """
+    A dynamic type provider that always returns None.
+    """
+
     def get(self, name: str, static_type: type[B]) -> None:
         return None
 
@@ -853,15 +860,15 @@ class BalloonWorld:
     """
 
 
-class StructuredBalloonWorld(BalloonWorld, ABC):
+class DefaultBalloonWorld(BalloonWorld, ABC):
     """
-    Structured balloon world.
+    A world of balloons with a schema and balloonists for each type.
     """
 
     @dataclass
     class Schema:
         """
-        Schema for a structured world of balloons.
+        Schema for a world of balloons.
         """
 
         types_: set[type[Balloon]]
@@ -925,15 +932,15 @@ class StructuredBalloonWorld(BalloonWorld, ABC):
         )
 
 
-class ClosedBalloonWorld(BalloonWorld, ABC):
+class FixedBalloonWorld(BalloonWorld, ABC):
     """
     A world of where the set of tracked balloons is fixed.
     """
 
     @abstractmethod
     def populate(
-        self, schema: StructuredBalloonWorld.Schema, world_path: Path
-    ) -> StructuredClosedBalloonWorld:
+        self, schema: DefaultBalloonWorld.Schema, world_path: Path
+    ) -> ClosedBalloonWorld:
         """
         Populate this world with balloons from a new world.
 
@@ -943,15 +950,15 @@ class ClosedBalloonWorld(BalloonWorld, ABC):
 
     @staticmethod
     def _populate(
-        schema: StructuredBalloonWorld.Schema,
+        schema: DefaultBalloonWorld.Schema,
         world_path: Path,
-        baseline_schema: StructuredBalloonWorld.Schema,
+        baseline_schema: DefaultBalloonWorld.Schema,
         baseline_specialized_balloonists: Mapping[
             type[Balloon],
             SpecializedBalloonist[NamedBalloon],
         ],
         baseline_dynamic_type_provider: DynamicTypeProvider,
-    ) -> StructuredClosedBalloonWorld:
+    ) -> ClosedBalloonWorld:
         # TODO: Check schema compatibility
         specialized_balloonists: dict[
             type[Balloon], DefaultSpecializedBalloonist[NamedBalloon]
@@ -989,40 +996,40 @@ class ClosedBalloonWorld(BalloonWorld, ABC):
             baseline_provider=baseline_dynamic_type_provider,
         )
 
-        return StructuredClosedBalloonWorld(
+        return ClosedBalloonWorld(
             schema=baseline_schema,
             specialized_balloonists=specialized_balloonists,
             dynamic_type_provider=dynamic_type_provider,
         )
 
 
-class EmptyClosedBalloonWorld(ClosedBalloonWorld):
+class NullBalloonWorld(FixedBalloonWorld):
     """
     Balloon world with no balloons.
     """
 
     def populate(
-        self, schema: StructuredBalloonWorld.Schema, world_path: Path
-    ) -> StructuredClosedBalloonWorld:
+        self, schema: DefaultBalloonWorld.Schema, world_path: Path
+    ) -> ClosedBalloonWorld:
         return self._populate(
             schema=schema,
             world_path=world_path,
             baseline_schema=schema,  # Trick to avoid defining the "empty" schema
             baseline_specialized_balloonists={
-                t: EmptySpecializedBalloonist() for t in schema.types_
+                t: NullSpecializedBalloonist() for t in schema.types_
             },
-            baseline_dynamic_type_provider=EmptyDynamicTypeProvider(),
+            baseline_dynamic_type_provider=NullDynamicTypeProvider(),
         )
 
 
-class StructuredClosedBalloonWorld(ClosedBalloonWorld, StructuredBalloonWorld):
+class ClosedBalloonWorld(FixedBalloonWorld, DefaultBalloonWorld):
     """
-    Balloon world with a fixed set of balloons, structured with a schema.
+    Balloon world with a fixed set of balloons.
     """
 
     def __init__(
         self,
-        schema: StructuredBalloonWorld.Schema,
+        schema: DefaultBalloonWorld.Schema,
         specialized_balloonists: Mapping[
             type[Balloon],
             DefaultSpecializedBalloonist[NamedBalloon],
@@ -1038,11 +1045,11 @@ class StructuredClosedBalloonWorld(ClosedBalloonWorld, StructuredBalloonWorld):
         self._specialized_balloonists = specialized_balloonists
         self._dynamic_type_provider = dynamic_type_provider
 
-    def get_schema(self) -> StructuredBalloonWorld.Schema:
+    def get_schema(self) -> DefaultBalloonWorld.Schema:
         return self._schema
 
     def get_balloonist(self, type_: type[B]) -> Balloonist[B]:
-        return StructuredBalloonWorld._get_balloonist(
+        return DefaultBalloonWorld._get_balloonist(
             type_=type_,
             schema=self._schema,
             specialized_balloonists=self._specialized_balloonists,
@@ -1050,9 +1057,9 @@ class StructuredClosedBalloonWorld(ClosedBalloonWorld, StructuredBalloonWorld):
         )
 
     def populate(
-        self, schema: StructuredBalloonWorld.Schema, world_path: Path
-    ) -> StructuredClosedBalloonWorld:
-        return ClosedBalloonWorld._populate(
+        self, schema: DefaultBalloonWorld.Schema, world_path: Path
+    ) -> ClosedBalloonWorld:
+        return self._populate(
             schema=schema,
             world_path=world_path,
             baseline_schema=self._schema,
@@ -1060,7 +1067,7 @@ class StructuredClosedBalloonWorld(ClosedBalloonWorld, StructuredBalloonWorld):
             baseline_dynamic_type_provider=self._dynamic_type_provider,
         )
 
-    def to_open(self) -> StructuredOpenBalloonWorld:
+    def to_open(self) -> OpenBalloonWorld:
         """
         Convert the world to an open one.
 
@@ -1095,7 +1102,7 @@ class StructuredClosedBalloonWorld(ClosedBalloonWorld, StructuredBalloonWorld):
             baseline_provider=self._dynamic_type_provider,
         )
 
-        return StructuredOpenBalloonWorld(
+        return OpenBalloonWorld(
             schema=self._schema,
             specialized_balloonists=self._specialized_balloonists,
             specialized_trackers=specialized_trackers,
@@ -1166,14 +1173,14 @@ class StructuredClosedBalloonWorld(ClosedBalloonWorld, StructuredBalloonWorld):
         return closure_types
 
 
-class StructuredOpenBalloonWorld(StructuredBalloonWorld):
+class OpenBalloonWorld(DefaultBalloonWorld):
     """
-    A world where the set of tracked balloons can grow.
+    Balloon world where the set of tracked balloons can grow.
     """
 
     def __init__(
         self,
-        schema: StructuredBalloonWorld.Schema,
+        schema: DefaultBalloonWorld.Schema,
         specialized_balloonists: Mapping[
             type[Balloon], DefaultSpecializedBalloonist[NamedBalloon]
         ],
@@ -1196,11 +1203,11 @@ class StructuredOpenBalloonWorld(StructuredBalloonWorld):
         self._dynamic_type_provider = dynamic_type_provider
         self._dynamic_type_tracker = dynamic_type_tracker
 
-    def get_schema(self) -> StructuredBalloonWorld.Schema:
+    def get_schema(self) -> DefaultBalloonWorld.Schema:
         return self._schema
 
     def get_balloonist(self, type_: type[B]) -> Balloonist[B]:
-        return StructuredBalloonWorld._get_balloonist(
+        return DefaultBalloonWorld._get_balloonist(
             type_=type_,
             schema=self._schema,
             specialized_balloonists=self._specialized_balloonists,

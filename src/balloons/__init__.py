@@ -1,11 +1,11 @@
 from balloons.core import (
     Balloon,
     Balloonist,
-    EmptyClosedBalloonWorld,
+    ClosedBalloonWorld,
+    DefaultBalloonWorld,
     InflatedValue,
     NamedBalloon,
-    StructuredBalloonWorld,
-    StructuredClosedBalloonWorld,
-    StructuredOpenBalloonWorld,
+    NullBalloonWorld,
+    OpenBalloonWorld,
     balloon,
 )
