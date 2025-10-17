@@ -31,7 +31,6 @@ class Balloon:
     The top class for balloons.
     """
 
-    # Hack to return same type, even though it's not technically self
     def to_named(self, name: str) -> Self:
         """
         Promote the balloon to a named balloon.
@@ -959,7 +958,10 @@ class FixedBalloonWorld(BalloonWorld, ABC):
         ],
         baseline_dynamic_type_provider: DynamicTypeProvider,
     ) -> ClosedBalloonWorld:
-        # TODO: Check schema compatibility
+        if schema != baseline_schema:
+            # TODO: Check for schema compatibility rather than just equality
+            raise ValueError(f"Schemas do not match: {schema} vs {baseline_schema}")
+
         specialized_balloonists: dict[
             type[Balloon], DefaultSpecializedBalloonist[NamedBalloon]
         ] = {}
