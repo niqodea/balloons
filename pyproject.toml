@@ -9,6 +9,7 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = "^3.12"
 
+PyYAML = "^6.0"
 typing-extensions = "^4.12"
 
 [tool.poetry.group.dev.dependencies]
@@ -17,6 +18,8 @@ pytest = "*"
 # Linters
 mypy = "*"
 ruff = "*"
+
+types-PyYAML = "*"
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

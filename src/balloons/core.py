@@ -23,6 +23,7 @@ from typing import (
 )
 
 from typing_extensions import dataclass_transform
+from yaml import safe_dump, safe_load
 
 
 @dataclass(frozen=True)
@@ -390,6 +391,132 @@ class BalloonCache(Generic[BN]):
         self._balloons[balloon.name] = balloon
 
 
+class DataFormat(Enum):
+    JSON = "json"
+    YAML = "yaml"
+
+
+class DataIO(Protocol):
+    """
+    Manages data operations for balloons.
+    """
+
+    def setup(self) -> None:
+        """Initialize the data storage."""
+
+    def get_names(self) -> set[str]:
+        """
+        Get the names of the balloons in the storage.
+        """
+
+    def get_loader(self) -> DataIO.Loader:
+        """
+        Get the loader of balloon data.
+        """
+
+    def get_storer(self) -> DataIO.Storer:
+        """
+        Get the storer of balloon data.
+        """
+
+    class Loader(Protocol):
+        """
+        Loads balloon data.
+        """
+
+        def run(self, name: str) -> dict[str, DeflatedValue]:
+            """
+            Loads data of a balloon.
+
+            :param name: Name of the balloon.
+            """
+
+    class Storer(Protocol):
+        def run(self, name: str, data: dict[str, DeflatedValue]) -> None:
+            """
+            Stores data of a balloon.
+
+            :param name: Name of the balloon.
+            :param data: Data of the balloon.
+            """
+
+    @staticmethod
+    def create(path: Path, format_: DataFormat) -> DataIO:
+        match format_:
+            case DataFormat.JSON:
+                return JsonDataIO(path)
+            case DataFormat.YAML:
+                return YamlDataIO(path)
+            case _:
+                raise ValueError(f"Unsupported data format: {format_}")
+
+
+class JsonDataIO(DataIO):
+    def __init__(self, path: Path) -> None:
+        self._path = path
+
+    def setup(self) -> None:
+        self._path.mkdir(exist_ok=True)
+
+    def get_names(self) -> set[str]:
+        return {p.stem for p in self._path.glob("*.json")}
+
+    def get_loader(self) -> DataIO.Loader:
+        return JsonDataIO.Loader(self._path)
+
+    def get_storer(self) -> DataIO.Storer:
+        return JsonDataIO.Storer(self._path)
+
+    class Loader(DataIO.Loader):
+        def __init__(self, path: Path) -> None:
+            self._path = path
+
+        def run(self, name: str) -> dict[str, DeflatedValue]:
+            path = self._path / f"{name}.json"
+            return json.loads(path.read_text())
+
+    class Storer(DataIO.Storer):
+        def __init__(self, path: Path) -> None:
+            self._path = path
+
+        def run(self, name: str, data: dict[str, DeflatedValue]) -> None:
+            path = self._path / f"{name}.json"
+            path.write_text(json.dumps(data, indent=2))
+
+
+class YamlDataIO(DataIO):
+    def __init__(self, path: Path) -> None:
+        self._path = path
+
+    def setup(self) -> None:
+        self._path.mkdir(exist_ok=True)
+
+    def get_names(self) -> set[str]:
+        return {p.stem for p in self._path.glob("*.yaml")}
+
+    def get_loader(self) -> DataIO.Loader:
+        return YamlDataIO.Loader(self._path)
+
+    def get_storer(self) -> DataIO.Storer:
+        return YamlDataIO.Storer(self._path)
+
+    class Loader(DataIO.Loader):
+        def __init__(self, path: Path) -> None:
+            self._path = path
+
+        def run(self, name: str) -> dict[str, DeflatedValue]:
+            path = self._path / f"{name}.yaml"
+            return safe_load(path.read_text())
+
+    class Storer(DataIO.Storer):
+        def __init__(self, path: Path) -> None:
+            self._path = path
+
+        def run(self, name: str, data: dict[str, DeflatedValue]) -> None:
+            path = self._path / f"{name}.yaml"
+            path.write_text(safe_dump(data))
+
+
 class SpecializedBalloonist(Protocol[BN]):
     """
     Provides named balloons of a certain type, not including subtypes.
@@ -420,31 +547,30 @@ class DefaultSpecializedBalloonist(SpecializedBalloonist[BN]):
     def __init__(
         self,
         type_: type[BN],
-        jsons_path: Path,
         cache: BalloonCache[BN],
         baseline_balloonist: SpecializedBalloonist[BN],
         inflator: Inflator,
+        data_loader: DataIO.Loader,
     ) -> None:
         """
         :param type_: Type of the managed balloons.
-        :param jsons_path: Directory with the JSONs of the balloons.
         :param cache: Cache of the balloons.
         :param baseline_balloonist: Balloonist from the immutable baseline.
         :param inflator: Inflator of deflated values.
+        :param data_loader: Loader of balloon data from files.
         """
         self._type = type_
-        self._jsons_path = jsons_path
         self._cache = cache
         self._baseline_balloonist = baseline_balloonist
         self._inflator = inflator
+        self._data_loader = data_loader
 
     def get(self, name: str) -> BN:
         if name in self._cache.get_live_names():
             return self._cache.get(name)
 
         if name in self._cache.get_all_names():
-            json_path = self._jsons_path / f"{name}.json"
-            json_ = json.loads(json_path.read_text())
+            deflated_fields = self._data_loader.run(name)
 
             field_types = get_type_hints(self._type)
             init_kwargs = {"name": name} | {
@@ -452,7 +578,7 @@ class DefaultSpecializedBalloonist(SpecializedBalloonist[BN]):
                     deflated_value=deflated_field,
                     static_type=field_types[field_name],
                 )
-                for field_name, deflated_field in json_.items()
+                for field_name, deflated_field in deflated_fields.items()
             }
 
             balloon = self._type(**init_kwargs)
@@ -468,13 +594,6 @@ class DefaultSpecializedBalloonist(SpecializedBalloonist[BN]):
         return self._cache.get_all_names() | {
             n for n in self._baseline_balloonist.get_names()
         }
-
-    @property
-    def jsons_path(self) -> Path:
-        """
-        The path to the directory with the JSONs of the balloons.
-        """
-        return self._jsons_path
 
     @property
     def cache(self) -> BalloonCache[BN]:
@@ -504,29 +623,32 @@ class SpecializedBalloonTracker(Generic[BN]):
     def __init__(
         self,
         type_: type[BN],
-        jsons_path: Path,
         trackers: dict[type[Balloon], SpecializedBalloonTracker[NamedBalloon]],
         cache: BalloonCache[BN],
         baseline_balloonist: SpecializedBalloonist[BN],
         inflator: Inflator,
         deflator: Deflator,
+        data_loader: DataIO.Loader,
+        data_storer: DataIO.Storer,
     ) -> None:
         """
         :param type_: Type of the managed balloons.
-        :param jsons_path: Directory with the JSONs of the balloons.
         :param trackers: Trackers of the balloons.
         :param cache: Cache of the balloons.
         :param baseline_balloonist: Balloonist from the immutable baseline.
         :param inflator: Inflator of deflated values.
         :param deflator: Deflator of inflated values.
+        :param data_loader: Loader of balloon data from files.
+        :param data_storer: Storer of balloon data to files.
         """
         self._type = type_
-        self._jsons_path = jsons_path
         self._trackers = trackers
         self._cache = cache
         self._baseline_balloonist = baseline_balloonist
         self._inflator = inflator
         self._deflator = deflator
+        self._data_loader = data_loader
+        self._data_storer = data_storer
 
     def track(self, balloon: BN_inv) -> None:
         """
@@ -558,17 +680,15 @@ class SpecializedBalloonTracker(Generic[BN]):
                 f"Name: {balloon.name}"
             )
 
-        json_path = self._jsons_path / f"{balloon.name}.json"
-
         if balloon.name in self._cache.get_all_names():
-            json_ = json.loads(json_path.read_text())
+            deflated_fields = self._data_loader.run(balloon.name)
             field_types = get_type_hints(self._type)
             init_kwargs = {"name": balloon.name} | {
                 field_name: self._inflator.inflate(
                     deflated_value=deflated_field,
                     static_type=field_types[field_name],
                 )
-                for field_name, deflated_field in json_.items()
+                for field_name, deflated_field in deflated_fields.items()
             }
             tracked_balloon = self._type(**init_kwargs)
 
@@ -587,11 +707,11 @@ class SpecializedBalloonTracker(Generic[BN]):
         for field in fields:
             self._track_field(field)
 
-        json_ = {
+        deflated_fields = {
             field_name: self._deflator.deflate(field)
             for field_name, field in fields.items()
         }
-        json_path.write_text(json.dumps(json_, indent=2))
+        self._data_storer.run(balloon.name, deflated_fields)
 
         self._cache.track(balloon)
 
@@ -936,14 +1056,20 @@ class FixedBalloonWorld(BalloonWorld, ABC):
     A world of where the set of tracked balloons is fixed.
     """
 
+    DEFAULT_DATA_FORMAT = DataFormat.JSON
+
     @abstractmethod
     def populate(
-        self, schema: DefaultBalloonWorld.Schema, world_path: Path
+        self,
+        schema: DefaultBalloonWorld.Schema,
+        world_path: Path,
+        data_format: DataFormat = DEFAULT_DATA_FORMAT,
     ) -> ClosedBalloonWorld:
         """
         Populate this world with balloons from a new world.
 
         :param world_path: Path to the new world.
+        :param data_format: Data format of the new world.
         :return: The populated world.
         """
 
@@ -951,6 +1077,7 @@ class FixedBalloonWorld(BalloonWorld, ABC):
     def _populate(
         schema: DefaultBalloonWorld.Schema,
         world_path: Path,
+        data_format: DataFormat,
         baseline_schema: DefaultBalloonWorld.Schema,
         baseline_specialized_balloonists: Mapping[
             type[Balloon],
@@ -965,6 +1092,7 @@ class FixedBalloonWorld(BalloonWorld, ABC):
         specialized_balloonists: dict[
             type[Balloon], DefaultSpecializedBalloonist[NamedBalloon]
         ] = {}
+        data_ios: dict[type[Balloon], DataIO] = {}
 
         inflator = Inflator(
             types_={t.__qualname__: t for t in baseline_schema.types_},
@@ -975,16 +1103,18 @@ class FixedBalloonWorld(BalloonWorld, ABC):
             type_,
             baseline_specialized_balloonist,
         ) in baseline_specialized_balloonists.items():
-            jsons_path = world_path / type_.__qualname__
-            jsons_path.mkdir(exist_ok=True)
-            names = {p.stem for p in jsons_path.iterdir()}
+            data_path = world_path / type_.__qualname__
+            data_io = DataIO.create(data_path, data_format)
+            data_io.setup()
+            names = data_io.get_names()
+            data_ios[type_] = data_io
 
             specialized_balloonists[type_] = DefaultSpecializedBalloonist(
                 type_=type_.Named,
-                jsons_path=jsons_path,
                 cache=BalloonCache(type_=type_.Named, names=names),
                 baseline_balloonist=baseline_specialized_balloonist,
                 inflator=inflator,
+                data_loader=data_ios[type_].get_loader(),
             )
 
         dynamic_type_cache = DynamicTypeCache()
@@ -1000,6 +1130,7 @@ class FixedBalloonWorld(BalloonWorld, ABC):
 
         return ClosedBalloonWorld(
             schema=baseline_schema,
+            data_ios=data_ios,
             specialized_balloonists=specialized_balloonists,
             dynamic_type_provider=dynamic_type_provider,
         )
@@ -1011,11 +1142,15 @@ class NullBalloonWorld(FixedBalloonWorld):
     """
 
     def populate(
-        self, schema: DefaultBalloonWorld.Schema, world_path: Path
+        self,
+        schema: DefaultBalloonWorld.Schema,
+        world_path: Path,
+        data_format: DataFormat = FixedBalloonWorld.DEFAULT_DATA_FORMAT,
     ) -> ClosedBalloonWorld:
         return self._populate(
             schema=schema,
             world_path=world_path,
+            data_format=data_format,
             baseline_schema=schema,  # Trick to avoid defining the "empty" schema
             baseline_specialized_balloonists={
                 t: NullSpecializedBalloonist() for t in schema.types_
@@ -1032,6 +1167,7 @@ class ClosedBalloonWorld(FixedBalloonWorld, DefaultBalloonWorld):
     def __init__(
         self,
         schema: DefaultBalloonWorld.Schema,
+        data_ios: Mapping[type[Balloon], DataIO],
         specialized_balloonists: Mapping[
             type[Balloon],
             DefaultSpecializedBalloonist[NamedBalloon],
@@ -1040,10 +1176,12 @@ class ClosedBalloonWorld(FixedBalloonWorld, DefaultBalloonWorld):
     ) -> None:
         """
         :param schema: Schema of the world.
+        :param data_ios: Data IOs for each type.
         :param specialized_balloonists: Specialized balloonists for each type.
         :param dynamic_type_provider: Providers of dynamic types of balloons.
         """
         self._schema = schema
+        self._data_ios = data_ios
         self._specialized_balloonists = specialized_balloonists
         self._dynamic_type_provider = dynamic_type_provider
 
@@ -1059,11 +1197,15 @@ class ClosedBalloonWorld(FixedBalloonWorld, DefaultBalloonWorld):
         )
 
     def populate(
-        self, schema: DefaultBalloonWorld.Schema, world_path: Path
+        self,
+        schema: DefaultBalloonWorld.Schema,
+        world_path: Path,
+        data_format: DataFormat = FixedBalloonWorld.DEFAULT_DATA_FORMAT,
     ) -> ClosedBalloonWorld:
         return self._populate(
             schema=schema,
             world_path=world_path,
+            data_format=data_format,
             baseline_schema=self._schema,
             baseline_specialized_balloonists=self._specialized_balloonists,
             baseline_dynamic_type_provider=self._dynamic_type_provider,
@@ -1090,12 +1232,13 @@ class ClosedBalloonWorld(FixedBalloonWorld, DefaultBalloonWorld):
         for type_, specialized_balloonist in self._specialized_balloonists.items():
             specialized_trackers[type_] = SpecializedBalloonTracker(
                 type_=type_.Named,
-                jsons_path=specialized_balloonist.jsons_path,
                 trackers=specialized_trackers,
                 cache=specialized_balloonist.cache,
                 baseline_balloonist=specialized_balloonist,
                 inflator=inflator,
                 deflator=deflator,
+                data_loader=self._data_ios[type_].get_loader(),
+                data_storer=self._data_ios[type_].get_storer(),
             )
 
         dynamic_type_tracker = DynamicTypeTracker(
