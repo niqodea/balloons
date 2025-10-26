@@ -233,13 +233,13 @@ class Inflator:
                 return balloonist.get(name)  # type: ignore[return-value]
 
             if isinstance(deflated_value, dict):
-                type_name = deflated_value["@type"]
+                type_name = deflated_value[".type"]
                 type_ = self._types[type_name]
                 if not issubclass(type_, static_type):
                     raise ValueError(f"Expected type: {static_type}, got: {type_}")
 
                 deflated_fields = {
-                    k: v for k, v in deflated_value.items() if k[0] != "@"
+                    k: v for k, v in deflated_value.items() if k[0] != "."
                 }
                 field_types = get_type_hints(type_)
                 inflated_fields = {
@@ -312,7 +312,7 @@ class Deflator:
                 field_name: self.deflate(inflated_field)
                 for field_name, inflated_field in inflated_value.__dict__.items()
             }
-            return {"@type": type_.__qualname__} | deflated_fields
+            return {".type": type_.__qualname__} | deflated_fields
 
         if isinstance(inflated_value, dict):
             return {

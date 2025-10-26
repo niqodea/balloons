@@ -1,6 +1,6 @@
 {
   "size": {
-    "@type": "Animal.Size",
+    ".type": "Animal.Size",
     "height": 25,
     "weight": 15
   },
